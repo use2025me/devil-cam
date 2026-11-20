@@ -174,6 +174,7 @@ class GridActivity : Activity() {
         recorder = rec
         build(rec)
         checkVideoPort(rec)
+        UpdateChecker(this).check(manual = false)
     }
 
     /** Older setups assumed port 554; ask the recorder which video port it really uses. */
@@ -262,7 +263,7 @@ class GridActivity : Activity() {
 
     private fun settings() {
         val rec = recorder ?: return
-        val options = arrayOf("Refresh camera list", "Change recorder or login", "About Devil Cam")
+        val options = arrayOf("Refresh camera list", "Change recorder or login", "Check for app updates", "About Devil Cam")
         AlertDialog.Builder(this, R.style.Theme_DevilCam_Dialog)
             .setTitle("${rec.model} · ${rec.host}")
             .setItems(options) { _, which ->
@@ -273,7 +274,8 @@ class GridActivity : Activity() {
                         startActivity(Intent(this, SetupActivity::class.java))
                         finish()
                     }
-                    2 -> AlertDialog.Builder(this, R.style.Theme_DevilCam_Dialog)
+                    2 -> UpdateChecker(this).check(manual = true)
+                    3 -> AlertDialog.Builder(this, R.style.Theme_DevilCam_Dialog)
                         .setTitle("Devil Cam")
                         .setMessage("Version ${packageManager.getPackageInfo(packageName, 0).versionName}\n\nA Devil Media Group app.\nWatches your cameras over your home Wi-Fi, with no ports opened on your router.")
                         .setPositiveButton("OK", null)

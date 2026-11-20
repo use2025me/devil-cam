@@ -1,0 +1,149 @@
+package com.devilmedia.cam
+
+import android.app.Activity
+import android.app.AlertDialog
+import android.app.DownloadManager
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.net.Uri
+import android.os.Environment
+import android.provider.Settings
+import android.widget.Toast
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
+import org.json.JSONObject
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+import java.util.concurrent.Executors
+
+/**
+ * Checks GitHub for a newer release. If there is one, offers to download and install it.
+ * New versions install over the old one because every build is signed with the same key.
+ */
+class UpdateChecker(private val activity: Activity) {
+
+    private val apiUrl = "https://api.github.com/repos/use2025me/devil-cam/releases/latest"
+    private val apkUrl = "https://github.com/use2025me/devil-cam/releases/latest/download/DevilCam.apk"
+    private val apkName = "DevilCam-update.apk"
+
+    @Suppress("DEPRECATION")
+    private fun versionCode(): Int = activity.packageManager.getPackageInfo(activity.packageName, 0).versionCode
+    private fun versionName(): String = activity.packageManager.getPackageInfo(activity.packageName, 0).versionName ?: ""
+
+    fun check(manual: Boolean) {
+        Executors.newSingleThreadExecutor().execute {
+            try {
+                val conn = URL(apiUrl).openConnection() as HttpURLConnection
+                conn.connectTimeout = 8000
+                conn.readTimeout = 8000
+                conn.setRequestProperty("Accept", "application/vnd.github+json")
+                conn.setRequestProperty("User-Agent", "DevilCam")
+                if (conn.responseCode != 200) {
+                    if (manual) say("Couldn't check for updates right now.")
+                    return@execute
+                }
+                val body = conn.inputStream.bufferedReader().use { it.readText() }
+                conn.disconnect()
+
+                val json = JSONObject(body)
+                val tag = json.optString("tag_name") // e.g. "v1.0.12"
+                val latest = tag.substringAfterLast('.').toIntOrNull() ?: return@execute
+                if (latest > versionCode()) {
+                    val notes = json.optString("body").take(400)
+                    activity.runOnUiThread { offerUpdate(tag.removePrefix("v"), notes) }
+                } else if (manual) {
+                    say("You have the latest version.")
+                }
+            } catch (_: Exception) {
+                if (manual) say("Couldn't check for updates right now.")
+            }
+        }
+    }
+
+    private fun say(msg: String) {
+        activity.runOnUiThread { Toast.makeText(activity, msg, Toast.LENGTH_LONG).show() }
+    }
+
+    private fun offerUpdate(version: String, notes: String) {
+        if (activity.isFinishing || activity.isDestroyed) return
+        val message = buildString {
+            append("Version $version is available. You have ${versionName()}.")
+            if (notes.isNotBlank()) append("\n\n").append(notes)
+        }
+        AlertDialog.Builder(activity, R.style.Theme_DevilCam_Dialog)
+            .setTitle("Update available")
+            .setMessage(message)
+            .setPositiveButton("Update") { _, _ -> startDownload() }
+            .setNegativeButton("Later", null)
+            .show()
+    }
+
+    private fun startDownload() {
+        if (!activity.packageManager.canRequestPackageInstalls()) {
+            Toast.makeText(activity, "Allow Devil Cam to install updates, then tap Update again.", Toast.LENGTH_LONG).show()
+            try {
+                activity.startActivity(
+                    Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:${activity.packageName}"))
+                )
+            } catch (_: Exception) {
+                Toast.makeText(
+                    activity,
+                    "Allow Devil Cam under Settings > Developer options > Install unknown apps.",
+                    Toast.LENGTH_LONG
+                ).show()
+            }
+            return
+        }
+
+        val dir = activity.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: return
+        val file = File(dir, apkName)
+        if (file.exists()) file.delete()
+
+        val request = DownloadManager.Request(Uri.parse(apkUrl))
+            .setTitle("Devil Cam update")
+            .setMimeType("application/vnd.android.package-archive")
+            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            .setDestinationInExternalFilesDir(activity, Environment.DIRECTORY_DOWNLOADS, apkName)
+
+        val dm = activity.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+        val id = dm.enqueue(request)
+        Toast.makeText(activity, "Downloading update…", Toast.LENGTH_SHORT).show()
+
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                if (intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1) != id) return
+                try {
+                    activity.applicationContext.unregisterReceiver(this)
+                } catch (_: Exception) {
+                }
+                install(file)
+            }
+        }
+        ContextCompat.registerReceiver(
+            activity.applicationContext,
+            receiver,
+            IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE),
+            ContextCompat.RECEIVER_EXPORTED
+        )
+    }
+
+    private fun install(file: File) {
+        if (!file.exists()) {
+            Toast.makeText(activity, "Update download failed. Please try again.", Toast.LENGTH_LONG).show()
+            return
+        }
+        val uri = FileProvider.getUriForFile(activity, "${activity.packageName}.fileprovider", file)
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        try {
+            activity.startActivity(intent)
+        } catch (_: Exception) {
+            Toast.makeText(activity, "Couldn't open the installer. Please install the update with the Downloader app.", Toast.LENGTH_LONG).show()
+        }
+    }
+}
