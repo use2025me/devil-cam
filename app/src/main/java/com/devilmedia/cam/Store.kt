@@ -1,7 +1,6 @@
 package com.devilmedia.cam
 
 import android.content.Context
-import android.net.Uri
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
@@ -24,15 +23,13 @@ data class Recorder(
     val model: String,
     val channels: List<Channel>
 ) {
-    private fun auth(): String = Uri.encode(user) + ":" + Uri.encode(password) + "@"
-
     /** Live video. The sub-stream (lighter) is used in the grid, the main stream full screen. */
     fun liveUrl(channel: Int, sub: Boolean): String =
-        "rtsp://${auth()}$host:$rtspPort/Streaming/Channels/${channel}0${if (sub) 2 else 1}"
+        "rtsp://$host:$rtspPort/Streaming/Channels/${channel}0${if (sub) 2 else 1}"
 
     /** Recorded video from the hard drive, starting at [startUtc] (format yyyyMMdd'T'HHmmss'Z'). */
     fun playbackUrl(channel: Int, startUtc: String): String =
-        "rtsp://${auth()}$host:$rtspPort/Streaming/tracks/${channel}01?starttime=$startUtc"
+        "rtsp://$host:$rtspPort/Streaming/tracks/${channel}01?starttime=$startUtc"
 
     fun baseHttp(): String = if (httpPort == 80) "http://$host" else "http://$host:$httpPort"
 }

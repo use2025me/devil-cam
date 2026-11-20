@@ -16,6 +16,8 @@ android {
         targetSdk = 35
         versionCode = buildNumber
         versionName = "1.0.$buildNumber"
+        // Phones, tablets, Fire TV and Android TV boxes all use ARM chips.
+        ndk { abiFilters += listOf("armeabi-v7a", "arm64-v8a") }
     }
 
     signingConfigs {
@@ -52,14 +54,15 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    packaging {
+        jniLibs { useLegacyPackaging = true }
+    }
 }
 
 dependencies {
-    val media3 = "1.5.1"
     implementation("androidx.core:core-ktx:1.13.1")
-    // Video player that understands the RTSP streams Hikvision recorders send.
-    implementation("androidx.media3:media3-exoplayer:$media3")
-    implementation("androidx.media3:media3-exoplayer-rtsp:$media3")
-    implementation("androidx.media3:media3-ui:$media3")
+    // VLC's video engine: plays Hikvision and other CCTV streams reliably.
+    implementation("org.videolan.android:libvlc-all:3.6.0")
     testImplementation("junit:junit:4.13.2")
 }

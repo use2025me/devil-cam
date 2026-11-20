@@ -46,7 +46,7 @@ class CameraActivity : Activity() {
         frame = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
         title = TextView(this).apply {
             setTextColor(Color.WHITE)
-            textSize = 18f
+            textSize = 15f
             setShadowLayer(4f, 0f, 1f, Color.BLACK)
             setPadding(dp(16), dp(12), dp(16), dp(12))
         }
@@ -59,19 +59,20 @@ class CameraActivity : Activity() {
         controls.addView(control("Snapshot") { snapshot() })
         controls.addView(control("Next  ▶") { move(1) })
         setContentView(frame)
+        setFullScreen(true)
         showCamera()
     }
 
     private fun control(label: String, onClick: () -> Unit): Button = Button(this).apply {
         text = label
         isAllCaps = false
-        textSize = 15f
+        textSize = 13f
         setTextColor(Color.WHITE)
         background = focusBg(0xCC26282D.toInt(), Brand.CARD_PRESSED)
         stateListAnimator = null
         setPadding(dp(18), 0, dp(18), 0)
         setOnClickListener { onClick(); poke() }
-        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(46)).apply {
+        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(40)).apply {
             marginStart = dp(6); marginEnd = dp(6)
         }
     }
@@ -159,9 +160,14 @@ class CameraActivity : Activity() {
         null
     }
 
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) setFullScreen(true)
+    }
+
     override fun onStart() {
         super.onStart()
-        if (::tile.isInitialized && tile.player == null) tile.startLive(rec, sub = false)
+        if (::tile.isInitialized && !tile.isPlaying) tile.startLive(rec, sub = false)
     }
 
     override fun onStop() {

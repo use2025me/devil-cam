@@ -108,7 +108,7 @@ class PlaybackActivity : Activity() {
         videoBox.addView(t, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         // Hikvision recorders read this time as their own local time.
         val stamp = SimpleDateFormat("yyyyMMdd'T'HHmmss'Z'", Locale.US).format(start.time)
-        t.start(rec.playbackUrl(ch.number, stamp))
+        t.startRecording(rec, rec.playbackUrl(ch.number, stamp))
         tile = t
         pauseButton.text = "Pause"
         camButton.text = ch.name
@@ -118,8 +118,8 @@ class PlaybackActivity : Activity() {
     }
 
     private fun updateInfo() {
-        val p = tile?.player
-        val now = (start.clone() as Calendar).apply { add(Calendar.MILLISECOND, (p?.currentPosition ?: 0L).toInt()) }
+        val pos = tile?.video?.positionMs ?: 0L
+        val now = (start.clone() as Calendar).apply { add(Calendar.MILLISECOND, pos.toInt()) }
         info.text = "Recording from ${dayLabel(now)} at ${SimpleDateFormat("HH:mm:ss", Locale.UK).format(now.time)}"
     }
 
@@ -171,7 +171,7 @@ class PlaybackActivity : Activity() {
 
     /** Carries on from where you're watching when switching camera or jumping. */
     private fun keepPosition() {
-        val pos = tile?.player?.currentPosition ?: 0L
+        val pos = tile?.video?.positionMs ?: 0L
         start.add(Calendar.MILLISECOND, pos.toInt())
     }
 
@@ -182,9 +182,10 @@ class PlaybackActivity : Activity() {
     }
 
     private fun togglePause() {
-        val p = tile?.player ?: return
-        p.playWhenReady = !p.playWhenReady
-        pauseButton.text = if (p.playWhenReady) "Pause" else "Play"
+        val v = tile?.video ?: return
+        val pause = !v.paused
+        v.paused = pause
+        pauseButton.text = if (pause) "Play" else "Pause"
     }
 
     override fun onStart() {
