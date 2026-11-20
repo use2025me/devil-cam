@@ -3,13 +3,14 @@ package com.devilmedia.cam
 import android.app.Activity
 import android.app.AlertDialog
 import android.graphics.Color
+import android.graphics.Typeface
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
-import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
@@ -29,10 +30,11 @@ class PlaybackActivity : Activity() {
     }
     private lateinit var videoBox: FrameLayout
     private lateinit var info: TextView
-    private lateinit var camButton: Button
-    private lateinit var dayButton: Button
-    private lateinit var timeButton: Button
-    private lateinit var pauseButton: Button
+    private lateinit var camButton: TextView
+    private lateinit var dayButton: TextView
+    private lateinit var timeButton: TextView
+    private lateinit var pauseButton: FrameLayout
+    private lateinit var pauseIcon: android.widget.ImageView
     private var tile: CameraTile? = null
     private val handler = Handler(Looper.getMainLooper())
     private val tick = object : Runnable {
@@ -49,54 +51,99 @@ class PlaybackActivity : Activity() {
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.BLACK)
+            setBackgroundColor(Brand.BG_DEEP)
         }
-        videoBox = FrameLayout(this)
-        root.addView(videoBox, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
 
-        info = TextView(this).apply {
-            setTextColor(Brand.MUTED)
-            textSize = 14f
-            setPadding(dp(14), dp(6), dp(14), dp(2))
-            setBackgroundColor(Brand.BG)
-        }
-        root.addView(info)
-
-        val row = LinearLayout(this).apply {
+        // Header: back, title and what's playing.
+        val head = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(8), dp(6), dp(8), dp(10))
+            setPadding(dp(10), dp(10), dp(16), dp(10))
         }
-        camButton = button("") { pickCamera() }
-        dayButton = button("") { pickDay() }
-        timeButton = button("") { pickTime() }
-        row.addView(camButton); row.addView(dayButton); row.addView(timeButton)
-        row.addView(button("−5 min") { shift(-5) })
-        pauseButton = button("Pause") { togglePause() }
-        row.addView(pauseButton)
-        row.addView(button("+5 min") { shift(5) })
-        val scroll = HorizontalScrollView(this).apply {
-            setBackgroundColor(Brand.BG)
-            isFillViewport = true
-            addView(row)
+        head.addView(roundButton(R.drawable.ic_back, 40, Brand.CARD) { finish() })
+        val titles = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(12), 0, 0, 0) }
+        titles.addView(TextView(this).apply {
+            text = "Playback"
+            setTextColor(Color.WHITE)
+            textSize = 19f
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+        })
+        info = TextView(this).apply {
+            setTextColor(Brand.MUTED)
+            textSize = 12f
+            maxLines = 1
         }
-        root.addView(scroll)
+        titles.addView(info)
+        head.addView(titles, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        head.addView(pill("REC", 0x33C8102E, 0xFFFF6B7D.toInt()))
+        root.addView(head)
+
+        videoBox = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
+        root.addView(videoBox, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+
+        // Choices: which camera, which day, what time.
+        val chips = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(10), dp(12), dp(10), dp(4))
+        }
+        camButton = chip(R.drawable.ic_videocam) { pickCamera() }
+        dayButton = chip(R.drawable.ic_calendar) { pickDay() }
+        timeButton = chip(R.drawable.ic_clock) { pickTime() }
+        chips.addView(camButton); chips.addView(dayButton); chips.addView(timeButton)
+        root.addView(HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            addView(chips)
+        })
+
+        // Controls: back 5 minutes, pause/play, forward 5 minutes.
+        val controls = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(dp(8), dp(8), dp(8), dp(18))
+        }
+        controls.addView(labelled(roundButton(R.drawable.ic_rewind, 50, Brand.CARD) { shift(-5) }, "−5 min"))
+        pauseIcon = android.widget.ImageView(this)
+        pauseButton = roundButton(R.drawable.ic_pause, 64, Brand.RED) { togglePause() }
+        controls.addView(labelled(pauseButton, ""))
+        controls.addView(labelled(roundButton(R.drawable.ic_forward, 50, Brand.CARD) { shift(5) }, "+5 min"))
+        root.addView(controls)
+
         setContentView(root)
         play()
         camButton.requestFocus()
     }
 
-    private fun button(label: String, onClick: () -> Unit): Button = Button(this).apply {
-        text = label
-        isAllCaps = false
-        textSize = 15f
+    private fun labelled(v: View, label: String): View = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        gravity = Gravity.CENTER_HORIZONTAL
+        setPadding(dp(16), 0, dp(16), 0)
+        addView(v)
+        addView(TextView(context).apply {
+            text = label
+            setTextColor(Brand.MUTED)
+            textSize = 11f
+            gravity = Gravity.CENTER
+            setPadding(0, dp(4), 0, 0)
+        })
+    }
+
+    private fun chip(iconRes: Int, onClick: () -> Unit): TextView = TextView(this).apply {
+        textSize = 14f
         setTextColor(Color.WHITE)
-        background = focusBg(Brand.CARD, Brand.CARD_PRESSED)
-        stateListAnimator = null
-        setPadding(dp(14), 0, dp(14), 0)
+        gravity = Gravity.CENTER_VERTICAL
+        background = focusBg(Brand.CARD, Brand.CARD_PRESSED, radius = 22)
+        isFocusable = true
+        isClickable = true
         setOnClickListener { onClick() }
-        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(46)).apply {
-            marginStart = dp(4); marginEnd = dp(4)
+        setPadding(dp(14), dp(10), dp(16), dp(10))
+        val d = context.getDrawable(iconRes)!!.mutate()
+        d.setTint(0xFFFF6B7D.toInt())
+        d.setBounds(0, 0, dp(18), dp(18))
+        setCompoundDrawablesRelative(d, null, null, null)
+        compoundDrawablePadding = dp(8)
+        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            marginEnd = dp(8)
         }
     }
 
@@ -110,7 +157,7 @@ class PlaybackActivity : Activity() {
         val stamp = SimpleDateFormat("yyyyMMdd'T'HHmmss'Z'", Locale.US).format(start.time)
         t.startRecording(rec, rec.playbackUrl(ch.number, stamp))
         tile = t
-        pauseButton.text = "Pause"
+        setPauseIcon(false)
         camButton.text = ch.name
         dayButton.text = dayLabel(start)
         timeButton.text = SimpleDateFormat("HH:mm", Locale.UK).format(start.time)
@@ -120,7 +167,7 @@ class PlaybackActivity : Activity() {
     private fun updateInfo() {
         val pos = tile?.video?.positionMs ?: 0L
         val now = (start.clone() as Calendar).apply { add(Calendar.MILLISECOND, pos.toInt()) }
-        info.text = "Recording from ${dayLabel(now)} at ${SimpleDateFormat("HH:mm:ss", Locale.UK).format(now.time)}"
+        info.text = "${rec.channels[camIndex].name} · ${dayLabel(now)} at ${SimpleDateFormat("HH:mm:ss", Locale.UK).format(now.time)}"
     }
 
     private fun dayLabel(c: Calendar): String {
@@ -181,11 +228,16 @@ class PlaybackActivity : Activity() {
         play()
     }
 
+    private fun setPauseIcon(paused: Boolean) {
+        (pauseButton.getChildAt(0) as? android.widget.ImageView)
+            ?.setImageResource(if (paused) R.drawable.ic_play else R.drawable.ic_pause)
+    }
+
     private fun togglePause() {
         val v = tile?.video ?: return
         val pause = !v.paused
         v.paused = pause
-        pauseButton.text = if (pause) "Play" else "Pause"
+        setPauseIcon(pause)
     }
 
     override fun onStart() {

@@ -22,6 +22,8 @@ import kotlin.concurrent.thread
 /** Devil Media Group colours. */
 object Brand {
     const val BG = 0xFF1B1C1F.toInt()
+    const val BG_DEEP = 0xFF0F1012.toInt()
+    const val LINE = 0xFF2E3036.toInt()
     const val CARD = 0xFF26282D.toInt()
     const val CARD_PRESSED = 0xFF33363C.toInt()
     const val RED = 0xFFC8102E.toInt()
@@ -49,6 +51,48 @@ fun Context.focusBg(fill: Int, pressed: Int, radius: Int = 14): StateListDrawabl
     addState(intArrayOf(android.R.attr.state_focused), rounded(fill, radius, strokeColor = Color.WHITE))
     addState(intArrayOf(), rounded(fill, radius))
 }
+
+/** A small rounded label, e.g. "LIVE". */
+fun Context.pill(text: String, fill: Int, textColor: Int = Color.WHITE): TextView = TextView(this).apply {
+    this.text = text
+    textSize = 10f
+    setTextColor(textColor)
+    typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
+    letterSpacing = 0.08f
+    background = rounded(fill, 20)
+    setPadding(dp(8), dp(3), dp(8), dp(3))
+}
+
+/** An icon from res/drawable, tinted. */
+fun Context.icon(res: Int, sizeDp: Int = 22, tint: Int = Color.WHITE): android.widget.ImageView =
+    android.widget.ImageView(this).apply {
+        setImageResource(res)
+        imageTintList = android.content.res.ColorStateList.valueOf(tint)
+        layoutParams = LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp))
+    }
+
+/** Round icon button for video controls; shows a white ring when selected with a TV remote. */
+fun Context.roundButton(res: Int, sizeDp: Int = 52, fill: Int = 0x66000000, onClick: () -> Unit): android.widget.FrameLayout =
+    android.widget.FrameLayout(this).apply {
+        val ring = StateListDrawable().apply {
+            addState(intArrayOf(android.R.attr.state_pressed), GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(Brand.CARD_PRESSED) })
+            addState(intArrayOf(android.R.attr.state_focused), GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(fill); setStroke(dp(2), Color.WHITE) })
+            addState(intArrayOf(), GradientDrawable().apply { shape = GradientDrawable.OVAL; setColor(fill) })
+        }
+        background = ring
+        isFocusable = true
+        isClickable = true
+        setOnClickListener { onClick() }
+        val i = icon(res, (sizeDp * 0.46f).toInt())
+        addView(i, android.widget.FrameLayout.LayoutParams(dp((sizeDp * 0.46f).toInt()), dp((sizeDp * 0.46f).toInt()), Gravity.CENTER))
+        layoutParams = LinearLayout.LayoutParams(dp(sizeDp), dp(sizeDp))
+    }
+
+/** Fade from dark to clear, used behind text on top of video. */
+fun shade(top: Boolean): GradientDrawable = GradientDrawable(
+    if (top) GradientDrawable.Orientation.TOP_BOTTOM else GradientDrawable.Orientation.BOTTOM_TOP,
+    intArrayOf(0xCC000000.toInt(), 0x00000000)
+)
 
 private val mainHandler = Handler(Looper.getMainLooper())
 

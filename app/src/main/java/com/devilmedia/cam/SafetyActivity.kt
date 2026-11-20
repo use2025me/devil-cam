@@ -57,8 +57,22 @@ class SafetyActivity : CamScreen() {
                 Finding.Level.WARN -> "!" to Brand.AMBER
                 Finding.Level.BAD -> "✕" to Brand.SOFT_RED
             }
-            text("$mark  ${f.title}", 17f, colour, bold = true, parent = c)
-            text(f.detail, 14f, parent = c)
+            val row = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+            row.addView(android.widget.TextView(this).apply {
+                text = mark
+                setTextColor(colour)
+                textSize = 15f
+                gravity = android.view.Gravity.CENTER
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    shape = android.graphics.drawable.GradientDrawable.OVAL
+                    setColor((colour and 0x00FFFFFF) or 0x33000000)
+                }
+            }, LinearLayout.LayoutParams(dp(32), dp(32)).apply { marginEnd = dp(14); topMargin = dp(2) })
+            val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+            text(f.title, 16f, Brand.TEXT, bold = true, parent = col)
+            text(f.detail, 13f, parent = col)
+            row.addView(col, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            c.addView(row)
         }
     }
 }

@@ -17,7 +17,8 @@ object Vlc {
 }
 
 /** A video picture that plays a recorder stream (live or recorded). */
-class CamVideo(context: Context) : FrameLayout(context) {
+/** [texture] lets the picture have rounded corners (used in the grid). */
+class CamVideo(context: Context, private val texture: Boolean = false) : FrameLayout(context) {
     private val layout = VLCVideoLayout(context)
     private var mp: MediaPlayer? = null
     private var sawPicture = false
@@ -48,7 +49,7 @@ class CamVideo(context: Context) : FrameLayout(context) {
         sawPicture = false
         val lib = Vlc.get(context)
         val player = MediaPlayer(lib)
-        player.attachViews(layout, null, false, false)
+        player.attachViews(layout, null, false, texture)
         player.videoScale = MediaPlayer.ScaleType.SURFACE_BEST_FIT
         val media = Media(lib, Uri.parse(url)).apply {
             setHWDecoderEnabled(true, false)

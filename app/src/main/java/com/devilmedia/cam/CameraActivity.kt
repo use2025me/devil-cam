@@ -3,6 +3,7 @@ package com.devilmedia.cam
 import android.app.Activity
 import android.content.ContentValues
 import android.graphics.Color
+import android.graphics.Typeface
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
@@ -15,7 +16,6 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
-import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -33,9 +33,12 @@ class CameraActivity : Activity() {
     private lateinit var tile: CameraTile
     private lateinit var frame: FrameLayout
     private lateinit var controls: LinearLayout
+    private lateinit var topBar: LinearLayout
     private lateinit var title: TextView
+    private lateinit var subtitle: TextView
+    private lateinit var live: TextView
     private val handler = Handler(Looper.getMainLooper())
-    private val hide = Runnable { controls.visibility = View.GONE; title.visibility = View.GONE }
+    private val hide = Runnable { controls.visibility = View.GONE; topBar.visibility = View.GONE }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -44,37 +47,52 @@ class CameraActivity : Activity() {
         index = intent.getIntExtra("index", 0).coerceIn(0, rec.channels.size - 1)
 
         frame = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
+
+        topBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            background = shade(top = true)
+            setPadding(dp(12), dp(14), dp(16), dp(28))
+        }
+        topBar.addView(roundButton(R.drawable.ic_back, 42, 0x55000000) { finish() })
+        val titles = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(12), 0, dp(8), 0)
+        }
         title = TextView(this).apply {
             setTextColor(Color.WHITE)
-            textSize = 15f
+            textSize = 17f
+            typeface = Typeface.create("sans-serif-medium", Typeface.BOLD)
             setShadowLayer(4f, 0f, 1f, Color.BLACK)
-            setPadding(dp(16), dp(12), dp(16), dp(12))
+            maxLines = 1
         }
+        subtitle = TextView(this).apply {
+            setTextColor(0xFFD0D4DA.toInt())
+            textSize = 12f
+            setShadowLayer(4f, 0f, 1f, Color.BLACK)
+        }
+        titles.addView(title)
+        titles.addView(subtitle)
+        topBar.addView(titles, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        live = pill("● LIVE", Brand.RED).apply { visibility = View.GONE }
+        topBar.addView(live)
+
         controls = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
-            setPadding(dp(8), dp(8), dp(8), dp(16))
+            background = shade(top = false)
+            setPadding(dp(8), dp(36), dp(8), dp(22))
         }
-        controls.addView(control("◀  Previous") { move(-1) })
-        controls.addView(control("Snapshot") { snapshot() })
-        controls.addView(control("Next  ▶") { move(1) })
+        controls.addView(roundButton(R.drawable.ic_prev, 52) { move(-1); poke() }.spaced())
+        controls.addView(roundButton(R.drawable.ic_snapshot, 66, Brand.RED) { snapshot(); poke() }.spaced())
+        controls.addView(roundButton(R.drawable.ic_next, 52) { move(1); poke() }.spaced())
         setContentView(frame)
         setFullScreen(true)
         showCamera()
     }
 
-    private fun control(label: String, onClick: () -> Unit): Button = Button(this).apply {
-        text = label
-        isAllCaps = false
-        textSize = 13f
-        setTextColor(Color.WHITE)
-        background = focusBg(0xCC26282D.toInt(), Brand.CARD_PRESSED)
-        stateListAnimator = null
-        setPadding(dp(18), 0, dp(18), 0)
-        setOnClickListener { onClick(); poke() }
-        layoutParams = LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, dp(40)).apply {
-            marginStart = dp(6); marginEnd = dp(6)
-        }
+    private fun View.spaced(): View = apply {
+        (layoutParams as LinearLayout.LayoutParams).apply { marginStart = dp(14); marginEnd = dp(14) }
     }
 
     private fun showCamera() {
@@ -83,10 +101,13 @@ class CameraActivity : Activity() {
         val ch = rec.channels[index]
         tile = CameraTile(this, ch)
         tile.isFocusable = false
-        tile.foreground = null
+        tile.hideOverlay()
+        tile.onLive = { on -> live.visibility = if (on) View.VISIBLE else View.GONE }
+        live.visibility = View.GONE
         frame.addView(tile, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
-        title.text = "${ch.name}   ${index + 1} of ${rec.channels.size}"
-        frame.addView(title, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.START))
+        title.text = ch.name
+        subtitle.text = "Camera ${index + 1} of ${rec.channels.size} · Full quality"
+        frame.addView(topBar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP))
         frame.addView(controls, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
         tile.startLive(rec, sub = false)
         poke()
@@ -101,9 +122,9 @@ class CameraActivity : Activity() {
     /** Shows the buttons for a few seconds. */
     private fun poke() {
         controls.visibility = View.VISIBLE
-        title.visibility = View.VISIBLE
+        topBar.visibility = View.VISIBLE
         handler.removeCallbacks(hide)
-        handler.postDelayed(hide, 4000)
+        handler.postDelayed(hide, 5000)
     }
 
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {

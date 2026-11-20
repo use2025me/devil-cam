@@ -16,13 +16,21 @@ class SetupActivity : CamScreen() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setupScreen("Devil Cam")
-        text("Watch your home cameras on this phone, tablet or TV.")
-        gap(10)
-        text("Make sure this device is on the same Wi-Fi as your recorder, then tap below.")
-        gap(6)
-        val find = button("Find my recorder", primary = true) { search() }
-        button("Type the address myself") { askAddress() }
+        setupScreen(null)
+        gap(20)
+        body.addView(android.widget.FrameLayout(this).apply {
+            background = rounded(0x33C8102E, 24)
+            addView(icon(R.drawable.ic_videocam, 40, 0xFFFF4D5E.toInt()),
+                android.widget.FrameLayout.LayoutParams(dp(40), dp(40), android.view.Gravity.CENTER))
+        }, LinearLayout.LayoutParams(dp(80), dp(80)).apply { gravity = android.view.Gravity.CENTER_HORIZONTAL })
+        gap(16)
+        text("Devil Cam", 28f, Brand.TEXT, bold = true, center = true)
+        text("Your home cameras on your phone, tablet and TV.", 15f, center = true)
+        gap(18)
+        text("Make sure this device is on the same Wi-Fi as your recorder.", 13f, Brand.GREY, center = true)
+        gap(8)
+        val find = button("Find my recorder", primary = true) { search() }.withIcon(R.drawable.ic_search)
+        button("Type the address myself") { askAddress() }.withIcon(R.drawable.ic_edit)
         gap(12)
         status = text("", 15f)
         list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
@@ -44,14 +52,36 @@ class SetupActivity : CamScreen() {
             status.text = "Found ${found.size}. Tap your recorder:"
             for (f in found) {
                 val c = card(list) { askLogin(f.ip, f.httpPort) }
-                text(f.description, 17f, Brand.TEXT, bold = true, parent = c)
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    gravity = android.view.Gravity.CENTER_VERTICAL
+                }
+                row.addView(android.widget.FrameLayout(this).apply {
+                    background = rounded(0x33C8102E, 12)
+                    addView(icon(R.drawable.ic_videocam, 22, 0xFFFF4D5E.toInt()),
+                        android.widget.FrameLayout.LayoutParams(dp(22), dp(22), android.view.Gravity.CENTER))
+                }, LinearLayout.LayoutParams(dp(44), dp(44)).apply { marginEnd = dp(14) })
+                val col = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+                text(f.description, 17f, Brand.TEXT, bold = true, parent = col)
                 text(
                     f.ip + if (f.activated == false) "  ·  not set up yet. Set it up with Hik-Connect first." else "",
-                    14f, parent = c
+                    13f, parent = col
                 )
+                row.addView(col, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+                row.addView(icon(R.drawable.ic_next, 22, Brand.GREY))
+                c.addView(row)
             }
             list.getChildAt(0)?.requestFocus()
         }
+    }
+
+    private fun android.widget.Button.withIcon(res: Int): android.widget.Button = apply {
+        val d = context.getDrawable(res)!!.mutate()
+        d.setTint(Color.WHITE)
+        d.setBounds(0, 0, dp(20), dp(20))
+        setCompoundDrawablesRelative(d, null, null, null)
+        compoundDrawablePadding = dp(10)
+        gravity = android.view.Gravity.CENTER
     }
 
     private fun field(hint: String, value: String, password: Boolean): EditText = EditText(this).apply {
