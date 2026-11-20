@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Keeps Devil Cam's top bar clear of the phone's clock and battery on Android 15 and newer. -->
+    <style name="Theme.DevilCam" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/ds_bg</item>
+        <item name="android:statusBarColor">@color/ds_bg</item>
+        <item name="android:navigationBarColor">@color/ds_bg</item>
+        <item name="android:colorAccent">@color/ds_red</item>
+        <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
+    </style>
+</resources>
