@@ -141,6 +141,18 @@ class Isapi(private val base: String, private val user: String, private val pass
         null
     }
 
+    /** The recorder's video (RTSP) port, if it says. Usually 554. */
+    fun rtspPort(): Int? = try {
+        val r = get("/ISAPI/Security/adminAccesses")
+        if (!r.ok) null else
+            Regex("""<AdminAccessProtocol\b.*?</AdminAccessProtocol>""", RegexOption.DOT_MATCHES_ALL)
+                .findAll(r.text)
+                .firstOrNull { tag(it.value, "protocol").equals("RTSP", ignoreCase = true) }
+                ?.let { tag(it.value, "portNo")?.toIntOrNull() }
+    } catch (_: Exception) {
+        null
+    }
+
     /** A still photo from a camera, as JPEG bytes, or null. */
     fun snapshot(channel: Int): ByteArray? = try {
         val r = get("/ISAPI/Streaming/channels/${channel}01/picture")

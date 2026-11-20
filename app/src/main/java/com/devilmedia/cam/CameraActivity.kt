@@ -87,7 +87,7 @@ class CameraActivity : Activity() {
         title.text = "${ch.name}   ${index + 1} of ${rec.channels.size}"
         frame.addView(title, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.START))
         frame.addView(controls, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
-        tile.start(rec.liveUrl(ch.number, sub = false))
+        tile.startLive(rec, sub = false)
         poke()
     }
 
@@ -161,7 +161,7 @@ class CameraActivity : Activity() {
 
     override fun onStart() {
         super.onStart()
-        if (::tile.isInitialized && tile.player == null) tile.start(rec.liveUrl(rec.channels[index].number, sub = false))
+        if (::tile.isInitialized && tile.player == null) tile.startLive(rec, sub = false)
     }
 
     override fun onStop() {

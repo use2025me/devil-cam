@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
+import android.graphics.BitmapFactory
 import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
@@ -14,6 +15,7 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.annotation.OptIn
@@ -23,6 +25,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import kotlin.concurrent.thread
 
 /** A video tile: live picture, camera name and a status message. Selectable with a TV remote. */
 @OptIn(UnstableApi::class)
@@ -46,9 +49,16 @@ class CameraTile(context: Context, val channel: Channel) : FrameLayout(context) 
         setShadowLayer(4f, 0f, 1f, Color.BLACK)
         setPadding(context.dp(10), context.dp(6), context.dp(10), context.dp(6))
     }
+    /** Still photos from the recorder, shown until live video starts (or if it can't). */
+    private val photo = ImageView(context).apply {
+        scaleType = ImageView.ScaleType.FIT_CENTER
+        visibility = View.GONE
+    }
     var player: ExoPlayer? = null
         private set
     private val handler = Handler(Looper.getMainLooper())
+    @Volatile private var photoRun = 0
+    private var failures = 0
 
     init {
         setBackgroundColor(Color.BLACK)
@@ -56,33 +66,93 @@ class CameraTile(context: Context, val channel: Channel) : FrameLayout(context) 
         isFocusable = true
         isClickable = true
         addView(video, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-        addView(status, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        addView(photo, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        addView(status, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
         addView(label, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, Gravity.TOP or Gravity.START))
+        status.setPadding(context.dp(8), context.dp(4), context.dp(8), context.dp(8))
+        status.setShadowLayer(4f, 0f, 1f, Color.BLACK)
     }
 
-    fun start(url: String) {
-        stop()
-        status.text = "Connecting…"
+    /** Live view: shows photos straight away, then switches to smooth video once it starts. */
+    fun startLive(rec: Recorder, sub: Boolean) {
+        startPhotos(rec)
+        start(rec.liveUrl(channel.number, sub), rec)
+    }
+
+    fun start(url: String, rec: Recorder? = null) {
+        stopPlayer()
+        if (status.text.isNullOrEmpty()) status.text = "Connecting…"
         val p = Players.create(context, url, live = true)
         p.addListener(object : Player.Listener {
             override fun onRenderedFirstFrame() {
+                failures = 0
                 status.text = ""
+                stopPhotos()
             }
 
             override fun onPlayerError(error: PlaybackException) {
-                status.text = "No picture. Trying again…"
-                handler.postDelayed({ if (player === p) start(url) }, 5000)
+                failures++
+                val why = reason(error)
+                status.text = if (rec != null && photo.visibility == View.VISIBLE)
+                    "Live video didn't start ($why). Showing photos. Retrying…"
+                else "No picture ($why). Retrying…"
+                // Try again, waiting a little longer each time.
+                val wait = (5000L * failures).coerceAtMost(30_000L)
+                handler.postDelayed({ if (player === p) start(url, rec) }, wait)
             }
         })
         video.player = p
         player = p
     }
 
-    fun stop() {
+    private fun reason(e: PlaybackException): String {
+        var c: Throwable? = e.cause
+        var msg = e.errorCodeName.removePrefix("ERROR_CODE_").lowercase().replace('_', ' ')
+        while (c != null) {
+            val m = c.message
+            if (!m.isNullOrBlank()) msg = "$msg: ${m.take(80)}"
+            c = if (c.cause === c) null else c.cause
+            if (msg.length > 120) break
+        }
+        return msg
+    }
+
+    private fun startPhotos(rec: Recorder) {
+        val run = ++photoRun
+        val api = Isapi(rec.baseHttp(), rec.user, rec.password)
+        thread(isDaemon = true) {
+            while (photoRun == run) {
+                val jpg = api.snapshot(channel.number)
+                val bmp = jpg?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
+                if (photoRun != run) break
+                handler.post {
+                    if (photoRun == run && bmp != null) {
+                        photo.setImageBitmap(bmp)
+                        photo.visibility = View.VISIBLE
+                    }
+                }
+                Thread.sleep(if (bmp == null) 3000 else 1000)
+            }
+        }
+    }
+
+    private fun stopPhotos() {
+        photoRun++
+        photo.visibility = View.GONE
+        photo.setImageDrawable(null)
+    }
+
+    private fun stopPlayer() {
         handler.removeCallbacksAndMessages(null)
         player?.release()
         player = null
         video.player = null
+    }
+
+    fun stop() {
+        stopPhotos()
+        stopPlayer()
+        status.text = ""
     }
 }
 
@@ -103,6 +173,19 @@ class GridActivity : Activity() {
         }
         recorder = rec
         build(rec)
+        checkVideoPort(rec)
+    }
+
+    /** Older setups assumed port 554; ask the recorder which video port it really uses. */
+    private fun checkVideoPort(rec: Recorder) {
+        background({ Isapi(rec.baseHttp(), rec.user, rec.password).rtspPort() }) { port ->
+            if (port != null && port != rec.rtspPort) {
+                val updated = rec.copy(rtspPort = port)
+                Store(this).recorder = updated
+                recorder = updated
+                startAll()
+            }
+        }
     }
 
     private fun build(rec: Recorder) {
@@ -221,7 +304,7 @@ class GridActivity : Activity() {
     private fun startAll() {
         val rec = recorder ?: return
         // Light "sub-stream" in the grid keeps several cameras smooth, even on TV boxes.
-        tiles.forEach { it.start(rec.liveUrl(it.channel.number, sub = true)) }
+        tiles.forEach { it.startLive(rec, sub = true) }
     }
 
     override fun onStart() {

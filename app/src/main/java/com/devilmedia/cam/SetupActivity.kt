@@ -112,7 +112,7 @@ class SetupActivity : CamScreen() {
                 val api = Isapi(if (httpPort == 80) "http://$host" else "http://$host:$httpPort", user, pw)
                 val info = api.deviceInfo()
                 val channels = api.channels()
-                val rec = Recorder(host, httpPort, 554, user, pw, info.model, channels)
+                val rec = Recorder(host, httpPort, api.rtspPort() ?: 554, user, pw, info.model, channels)
                 Result.success(Triple(rec, info, api.upnpEnabled()))
             } catch (e: Exception) {
                 Result.failure(e)
