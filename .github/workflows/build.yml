@@ -26,11 +26,6 @@ jobs:
       - name: Set up Gradle cache
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Run tests
-        run: |
-          chmod +x gradlew
-          ./gradlew --no-daemon testDebugUnitTest
-
       # The signing key is stored encrypted in signing/release.jks.enc.
       # It can only be unlocked with the SIGNING_PASSWORD repository secret.
       - name: Unlock signing key
@@ -45,7 +40,9 @@ jobs:
             -in signing/release.jks.enc -out "$RUNNER_TEMP/release.jks" \
             -pass env:SIGNING_PASSWORD
 
-      - name: Build signed APK
+      # Tests run on the same release build as the APK (no separate debug build),
+      # the lint release check (lintVital) is off via checkReleaseBuilds = false.
+      - name: Test and build signed APK
         env:
           BUILD_NUMBER: ${{ github.run_number }}
           KEYSTORE_PATH: ${{ runner.temp }}/release.jks
@@ -53,7 +50,8 @@ jobs:
           KEY_ALIAS: devilcam
           KEY_PASSWORD: ${{ secrets.SIGNING_PASSWORD }}
         run: |
-          ./gradlew --no-daemon assembleRelease
+          chmod +x gradlew
+          ./gradlew --no-daemon testReleaseUnitTest assembleRelease
           cp app/build/outputs/apk/release/app-release.apk DevilCam.apk
 
       - name: Publish release
