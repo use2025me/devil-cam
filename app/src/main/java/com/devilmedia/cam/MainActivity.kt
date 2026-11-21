@@ -8,7 +8,7 @@ import android.os.Bundle
 class MainActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val next = if (Store(this).recorder != null) GridActivity::class.java else SetupActivity::class.java
+        val next = if (Store(this).hasAnything) GridActivity::class.java else SetupActivity::class.java
         startActivity(Intent(this, next))
         finish()
     }

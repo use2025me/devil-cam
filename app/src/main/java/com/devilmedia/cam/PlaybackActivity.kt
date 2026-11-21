@@ -22,7 +22,7 @@ import java.util.Locale
 /** Watch back what the recorder saved on its hard drive. */
 class PlaybackActivity : Activity() {
 
-    private lateinit var rec: Recorder
+    private lateinit var sources: List<CamSource>
     private var camIndex = 0
     private val start: Calendar = Calendar.getInstance().apply {
         add(Calendar.HOUR_OF_DAY, -1)
@@ -47,7 +47,11 @@ class PlaybackActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        rec = Store(this).recorder ?: return finish()
+        sources = allSources(Store(this)).filter { it.playbackUrl("20000101T000000Z") != null }
+        if (sources.isEmpty()) {
+            android.widget.Toast.makeText(this, "None of your cameras can play back recordings here yet.", android.widget.Toast.LENGTH_LONG).show()
+            return finish()
+        }
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -150,12 +154,12 @@ class PlaybackActivity : Activity() {
     private fun play() {
         tile?.stop()
         videoBox.removeAllViews()
-        val ch = rec.channels[camIndex]
+        val ch = sources[camIndex]
         val t = CameraTile(this, ch).apply { isFocusable = false; foreground = null }
         videoBox.addView(t, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         // Hikvision recorders read this time as their own local time.
         val stamp = SimpleDateFormat("yyyyMMdd'T'HHmmss'Z'", Locale.US).format(start.time)
-        t.startRecording(rec, rec.playbackUrl(ch.number, stamp))
+        t.startRecording(ch.playbackUrl(stamp)!!)
         tile = t
         setPauseIcon(false)
         camButton.text = ch.name
@@ -167,7 +171,7 @@ class PlaybackActivity : Activity() {
     private fun updateInfo() {
         val pos = tile?.video?.positionMs ?: 0L
         val now = (start.clone() as Calendar).apply { add(Calendar.MILLISECOND, pos.toInt()) }
-        info.text = "${rec.channels[camIndex].name} · ${dayLabel(now)} at ${SimpleDateFormat("HH:mm:ss", Locale.UK).format(now.time)}"
+        info.text = "${sources[camIndex].name} · ${dayLabel(now)} at ${SimpleDateFormat("HH:mm:ss", Locale.UK).format(now.time)}"
     }
 
     private fun dayLabel(c: Calendar): String {
@@ -188,7 +192,7 @@ class PlaybackActivity : Activity() {
 
     private fun pickCamera() {
         dialog().setTitle("Camera")
-            .setItems(rec.channels.map { it.name }.toTypedArray()) { _, i -> camIndex = i; keepPosition(); play() }
+            .setItems(sources.map { it.name }.toTypedArray()) { _, i -> camIndex = i; keepPosition(); play() }
             .show()
     }
 

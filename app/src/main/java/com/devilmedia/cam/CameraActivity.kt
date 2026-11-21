@@ -28,7 +28,7 @@ import java.util.Locale
 /** One camera, full screen, at full quality. Left/right (or the buttons) switch camera. */
 class CameraActivity : Activity() {
 
-    private lateinit var rec: Recorder
+    private lateinit var sources: List<CamSource>
     private var index = 0
     private lateinit var tile: CameraTile
     private lateinit var frame: FrameLayout
@@ -43,8 +43,12 @@ class CameraActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        rec = Store(this).recorder ?: return finish()
-        index = intent.getIntExtra("index", 0).coerceIn(0, rec.channels.size - 1)
+        val hidden = intent.getIntArrayExtra("hidden")?.toSet() ?: emptySet()
+        sources = allSources(Store(this), hidden)
+        if (sources.isEmpty()) return finish()
+        val key = intent.getStringExtra("key")
+        index = sources.indexOfFirst { it.key == key }.takeIf { it >= 0 }
+            ?: intent.getIntExtra("index", 0).coerceIn(0, sources.size - 1)
 
         frame = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
 
@@ -98,23 +102,23 @@ class CameraActivity : Activity() {
     private fun showCamera() {
         if (::tile.isInitialized) tile.stop()
         frame.removeAllViews()
-        val ch = rec.channels[index]
-        tile = CameraTile(this, ch)
+        val ch = sources[index]
+        tile = CameraTile(this, ch, texture = true)
         tile.isFocusable = false
         tile.hideOverlay()
         tile.onLive = { on -> live.visibility = if (on) View.VISIBLE else View.GONE }
         live.visibility = View.GONE
         frame.addView(tile, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         title.text = ch.name
-        subtitle.text = "Camera ${index + 1} of ${rec.channels.size} · Full quality"
+        subtitle.text = "${if (ch.doorbell) "Doorbell" else "Camera"} ${index + 1} of ${sources.size} · Full quality"
         frame.addView(topBar, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP))
         frame.addView(controls, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM))
-        tile.startLive(rec, sub = false)
+        tile.startLive(sub = false)
         poke()
     }
 
     private fun move(step: Int) {
-        val n = rec.channels.size
+        val n = sources.size
         index = ((index + step) % n + n) % n
         showCamera()
     }
@@ -149,10 +153,12 @@ class CameraActivity : Activity() {
     }
 
     private fun snapshot() {
-        val ch = rec.channels[index]
+        val ch = sources[index]
         Toast.makeText(this, "Taking a snapshot…", Toast.LENGTH_SHORT).show()
+        // Devices that can't send a photo: grab the picture on screen instead.
+        val frameGrab = tile.video.grabFrame()
         background({
-            val jpg = Isapi(rec.baseHttp(), rec.user, rec.password).snapshot(ch.number) ?: return@background null
+            val jpg = ch.snapshot() ?: frameGrab ?: return@background null
             save(jpg, ch.name)
         }) { where ->
             Toast.makeText(this, if (where != null) "Saved to $where" else "Couldn't take a snapshot.", Toast.LENGTH_LONG).show()
@@ -188,7 +194,7 @@ class CameraActivity : Activity() {
 
     override fun onStart() {
         super.onStart()
-        if (::tile.isInitialized && !tile.isPlaying) tile.startLive(rec, sub = false)
+        if (::tile.isInitialized && !tile.isPlaying) tile.startLive(sub = false)
     }
 
     override fun onStop() {

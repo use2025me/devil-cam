@@ -8,7 +8,7 @@ import android.content.Intent
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val store = Store(context)
-        if (store.motionAlerts && store.recorder != null) {
+        if (store.motionAlerts && store.hasAnything) {
             try {
                 AlertService.start(context)
             } catch (_: Exception) {

@@ -73,6 +73,43 @@ class Store(context: Context) {
                 .apply()
         }
 
+    /** Doorbells and cameras added on their own. Passwords are encrypted. */
+    var devices: List<Device>
+        get() = try {
+            val arr = org.json.JSONArray(prefs.getString("devices", "[]"))
+            (0 until arr.length()).mapNotNull { i ->
+                val o = arr.getJSONObject(i)
+                val pw = decrypt(o.getString("pw")) ?: return@mapNotNull null
+                Device(
+                    id = o.getString("id"),
+                    brand = Make.valueOf(o.getString("brand")),
+                    name = o.getString("name"),
+                    host = o.getString("host"),
+                    httpPort = o.optInt("httpPort", 80),
+                    user = o.getString("user"),
+                    password = pw,
+                    doorbell = o.optBoolean("doorbell", false),
+                    rtsp = o.optString("rtsp", "")
+                )
+            }
+        } catch (_: Exception) {
+            emptyList()
+        }
+        set(list) {
+            val arr = org.json.JSONArray()
+            list.forEach { d ->
+                arr.put(org.json.JSONObject().apply {
+                    put("id", d.id); put("brand", d.brand.name); put("name", d.name); put("host", d.host)
+                    put("httpPort", d.httpPort); put("user", d.user); put("pw", encrypt(d.password))
+                    put("doorbell", d.doorbell); put("rtsp", d.rtsp)
+                })
+            }
+            prefs.edit().putString("devices", arr.toString()).apply()
+        }
+
+    /** True if there's anything to watch. */
+    val hasAnything: Boolean get() = recorder != null || devices.isNotEmpty()
+
     /** Hide cameras the recorder gets no picture from. */
     var hideNoSignal: Boolean
         get() = prefs.getBoolean("hideNoSignal", true)

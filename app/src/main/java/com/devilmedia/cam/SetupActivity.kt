@@ -31,6 +31,9 @@ class SetupActivity : CamScreen() {
         gap(8)
         val find = button("Find my recorder", primary = true) { search() }.withIcon(R.drawable.ic_search)
         button("Type the address myself") { askAddress() }.withIcon(R.drawable.ic_edit)
+        button("Add a doorbell or camera instead") {
+            startActivity(Intent(this, AddDeviceActivity::class.java))
+        }.withIcon(R.drawable.ic_videocam)
         gap(12)
         status = text("", 15f)
         list = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }

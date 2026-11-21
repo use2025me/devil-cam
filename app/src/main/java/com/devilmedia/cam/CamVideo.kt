@@ -78,6 +78,23 @@ class CamVideo(context: Context, private val texture: Boolean = false) : FrameLa
         player.play()
     }
 
+    /** The picture currently on screen, as JPEG (only when shown with [texture]). */
+    fun grabFrame(): ByteArray? = try {
+        fun find(v: android.view.View): android.view.TextureView? = when (v) {
+            is android.view.TextureView -> v
+            is android.view.ViewGroup -> (0 until v.childCount).firstNotNullOfOrNull { find(v.getChildAt(it)) }
+            else -> null
+        }
+        val bmp = find(layout)?.bitmap
+        bmp?.let {
+            val out = java.io.ByteArrayOutputStream()
+            it.compress(android.graphics.Bitmap.CompressFormat.JPEG, 92, out)
+            out.toByteArray()
+        }
+    } catch (_: Exception) {
+        null
+    }
+
     fun stop() {
         val p = mp ?: return
         mp = null

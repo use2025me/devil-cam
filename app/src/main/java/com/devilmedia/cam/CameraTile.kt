@@ -20,8 +20,14 @@ import kotlin.concurrent.thread
  * A camera tile: the picture, the camera's name and a LIVE badge. Selectable with a TV remote.
  * [card] gives it rounded corners and a 16:9 shape (the grid on an upright phone).
  */
-class CameraTile(context: Context, val channel: Channel, private val card: Boolean = false, fill: Boolean = false) : FrameLayout(context) {
-    val video = CamVideo(context, texture = card).also { it.fill = fill }
+class CameraTile(
+    context: Context,
+    val source: CamSource,
+    private val card: Boolean = false,
+    fill: Boolean = false,
+    texture: Boolean = card
+) : FrameLayout(context) {
+    val video = CamVideo(context, texture = texture).also { it.fill = fill }
 
     /** Still photos from the recorder, shown until live video starts (or if it can't). */
     private val photo = ImageView(context).apply {
@@ -39,7 +45,7 @@ class CameraTile(context: Context, val channel: Channel, private val card: Boole
     }
     private val topShade = View(context).apply { background = shade(top = true) }
     private val name = TextView(context).apply {
-        text = channel.name
+        text = (if (source.doorbell) "🔔 " else "") + source.name
         setTextColor(Color.WHITE)
         textSize = 12f
         typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
@@ -108,20 +114,20 @@ class CameraTile(context: Context, val channel: Channel, private val card: Boole
     }
 
     /** Live view: shows photos straight away, then switches to smooth video once it starts. */
-    fun startLive(rec: Recorder, sub: Boolean) {
-        startPhotos(rec)
-        play(rec.liveUrl(channel.number, sub), rec, live = true)
+    fun startLive(sub: Boolean) {
+        startPhotos()
+        play(source.liveUrl(sub), live = true)
     }
 
     /** Recorded video from the hard drive. */
-    fun startRecording(rec: Recorder, url: String) {
+    fun startRecording(url: String) {
         stopPhotos()
-        play(url, rec, live = false)
+        play(url, live = false)
     }
 
     var onLive: ((Boolean) -> Unit)? = null
 
-    private fun play(url: String, rec: Recorder, live: Boolean) {
+    private fun play(url: String, live: Boolean) {
         handler.removeCallbacksAndMessages(null)
         status.text = if (photo.visibility == View.VISIBLE) "" else "Connecting…"
         video.onFirstFrame = {
@@ -137,17 +143,16 @@ class CameraTile(context: Context, val channel: Channel, private val card: Boole
             onLive?.invoke(false)
             status.text = if (photo.visibility == View.VISIBLE) "Live video: $why. Retrying…" else "No picture: $why. Retrying…"
             val wait = (4000L * failures).coerceAtMost(30_000L)
-            handler.postDelayed({ if (video.isActive) play(url, rec, live) }, wait)
+            handler.postDelayed({ if (video.isActive) play(url, live) }, wait)
         }
-        video.play(url, rec.user, rec.password, live)
+        video.play(url, source.user, source.password, live)
     }
 
-    private fun startPhotos(rec: Recorder) {
+    private fun startPhotos() {
         val run = ++photoRun
-        val api = Isapi(rec.baseHttp(), rec.user, rec.password)
         thread(isDaemon = true) {
             while (photoRun == run) {
-                val jpg = api.snapshot(channel.number)
+                val jpg = source.snapshot()
                 val bmp = jpg?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
                 if (photoRun != run) break
                 handler.post {
@@ -158,7 +163,7 @@ class CameraTile(context: Context, val channel: Channel, private val card: Boole
                         if (badge.visibility != View.VISIBLE) showBadge("PHOTO", 0xCC3A3D44.toInt())
                     }
                 }
-                Thread.sleep(if (bmp == null) 3000 else 1000)
+                if (jpg == null && bmp == null) Thread.sleep(10_000) else Thread.sleep(1000)
             }
         }
     }

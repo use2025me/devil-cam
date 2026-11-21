@@ -21,26 +21,23 @@ class GridActivity : Activity() {
     /** Cameras the recorder gets no picture from. */
     private var noSignal: Set<Int> = emptySet()
 
-    /** The cameras to show: all of them, minus ones with no signal if that setting is on. */
-    private fun shown(rec: Recorder): List<Channel> {
-        if (!Store(this).hideNoSignal) return rec.channels
-        val live = rec.channels.filter { it.number !in noSignal }
-        return live.ifEmpty { rec.channels }
-    }
+    private fun hiddenChannels(): Set<Int> = if (Store(this).hideNoSignal) noSignal else emptySet()
+
+    /** Everything to show: recorder cameras (minus ones with no signal, if that's on), then doorbells and cameras. */
+    private fun shown(): List<CamSource> = allSources(Store(this), hiddenChannels())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        val rec = Store(this).recorder
-        if (rec == null) {
+        val store = Store(this)
+        if (!store.hasAnything) {
             startActivity(Intent(this, SetupActivity::class.java))
             finish()
             return
         }
-        recorder = rec
-        build(rec)
-        checkVideoPort(rec)
-        checkSignal(rec)
+        recorder = store.recorder
+        build()
+        recorder?.let { checkVideoPort(it); checkSignal(it) }
         if (Store(this).motionAlerts) AlertService.start(this)
         UpdateChecker(this).check(manual = false)
     }
@@ -49,7 +46,7 @@ class GridActivity : Activity() {
         background({ Isapi(rec.baseHttp(), rec.user, rec.password).noSignalChannels() }) { dead ->
             if (dead != noSignal) {
                 noSignal = dead
-                build(recorder ?: rec)
+                build()
                 startAll()
             }
         }
@@ -75,7 +72,7 @@ class GridActivity : Activity() {
      * Upright phone: header, cameras as rounded 16:9 cards, and a bottom menu.
      * Sideways phone: cameras fill the whole screen. TV: header with menu, cameras fill the rest.
      */
-    private fun build(rec: Recorder) {
+    private fun build() {
         tiles.forEach { it.stop() }
         tiles.clear()
         val side = isSideways && !isTv
@@ -84,9 +81,9 @@ class GridActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(if (side) Color.BLACK else Brand.BG_DEEP)
         }
-        if (!side) root.addView(header(rec))
+        if (!side) root.addView(header())
 
-        val cams = shown(rec)
+        val cams = shown()
         val fill = Store(this).fillCards
         val cols = when {
             cams.size <= 1 -> 1
@@ -109,9 +106,11 @@ class GridActivity : Activity() {
                 lp.setMargins(gap, gap, gap, gap)
                 if (i < cams.size) {
                     val tile = CameraTile(this, cams[i], card = cards, fill = fill && cards)
-                    val full = rec.channels.indexOf(cams[i])
+                    val key = cams[i].key
                     tile.setOnClickListener {
-                        startActivity(Intent(this, CameraActivity::class.java).putExtra("index", full))
+                        startActivity(Intent(this, CameraActivity::class.java)
+                            .putExtra("key", key)
+                            .putExtra("hidden", hiddenChannels().toIntArray()))
                     }
                     tiles += tile
                     row.addView(tile, lp)
@@ -137,7 +136,8 @@ class GridActivity : Activity() {
         tiles.firstOrNull()?.requestFocus()
     }
 
-    private fun header(rec: Recorder): View {
+    private fun header(): View {
+        val rec = recorder
         val h = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -156,9 +156,12 @@ class GridActivity : Activity() {
             typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD)
         })
         titles.addView(TextView(this).apply {
-            val n = shown(rec).size
-            val hidden = rec.channels.size - n
-            text = "${rec.model.ifBlank { "Recorder" }} · $n camera${if (n == 1) "" else "s"}" +
+            val list = shown()
+            val n = list.size
+            val bells = list.count { it.doorbell }
+            val hidden = (rec?.channels?.size ?: 0) - list.count { it is RecorderCam }
+            text = (rec?.model?.ifBlank { "Recorder" } ?: "Devil Cam") + " · $n camera${if (n == 1) "" else "s"}" +
+                (if (bells > 0) " incl. $bells doorbell${if (bells == 1) "" else "s"}" else "") +
                 if (hidden > 0) " · $hidden with no signal hidden" else ""
             setTextColor(Brand.MUTED)
             textSize = 12f
@@ -229,38 +232,65 @@ class GridActivity : Activity() {
     private fun openSafety() = startActivity(Intent(this, SafetyActivity::class.java))
 
     private fun settings() {
-        val rec = recorder ?: return
+        val rec = recorder
         val store = Store(this)
         fun onOff(b: Boolean) = if (b) "On" else "Off"
         val options = arrayOf(
             "Motion alerts: ${onOff(store.motionAlerts)}",
             "Hide cameras with no signal: ${onOff(store.hideNoSignal)}",
             "Fill the camera cards: ${onOff(store.fillCards)}",
+            "Add a doorbell or camera",
+            "Remove a doorbell or camera",
             "Refresh camera list",
-            "Change recorder or login",
+            if (rec != null) "Change recorder or login" else "Add a recorder",
             "Check for app updates",
             "About Devil Cam"
         )
         AlertDialog.Builder(this, R.style.Theme_DevilCam_Dialog)
-            .setTitle("${rec.model} · ${rec.host}")
+            .setTitle(if (rec != null) "${rec.model} · ${rec.host}" else "Settings")
             .setItems(options) { _, which ->
                 when (which) {
                     0 -> toggleAlerts()
-                    1 -> { store.hideNoSignal = !store.hideNoSignal; build(rec); startAll() }
-                    2 -> { store.fillCards = !store.fillCards; build(rec); startAll() }
-                    3 -> refresh(rec)
-                    4 -> {
-                        AlertService.stop(this)
-                        store.recorder = null
-                        startActivity(Intent(this, SetupActivity::class.java))
+                    1 -> { store.hideNoSignal = !store.hideNoSignal; build(); startAll() }
+                    2 -> { store.fillCards = !store.fillCards; build(); startAll() }
+                    3 -> startActivity(Intent(this, AddDeviceActivity::class.java))
+                    4 -> removeDevice()
+                    5 -> rec?.let { refresh(it) }
+                    6 -> {
+                        if (rec != null) {
+                            store.recorder = null
+                            recorder = null
+                        }
+                        startActivity(Intent(this, SetupActivity::class.java).putExtra("addRecorder", true))
                         finish()
                     }
-                    5 -> UpdateChecker(this).check(manual = true)
-                    6 -> AlertDialog.Builder(this, R.style.Theme_DevilCam_Dialog)
+                    7 -> UpdateChecker(this).check(manual = true)
+                    8 -> AlertDialog.Builder(this, R.style.Theme_DevilCam_Dialog)
                         .setTitle("Devil Cam")
                         .setMessage("Version ${packageManager.getPackageInfo(packageName, 0).versionName}\n\nA Devil Media Group app.\nWatches your cameras over your home Wi-Fi, with no ports opened on your router.")
                         .setPositiveButton("OK", null)
                         .show()
+                }
+            }
+            .show()
+    }
+
+    private fun removeDevice() {
+        val store = Store(this)
+        val devices = store.devices
+        if (devices.isEmpty()) {
+            android.widget.Toast.makeText(this, "No doorbells or cameras added yet.", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        AlertDialog.Builder(this, R.style.Theme_DevilCam_Dialog)
+            .setTitle("Remove which one?")
+            .setItems(devices.map { it.name }.toTypedArray()) { _, i ->
+                store.devices = devices.filterIndexed { j, _ -> j != i }
+                if (!store.hasAnything) {
+                    startActivity(Intent(this, SetupActivity::class.java))
+                    finish()
+                } else {
+                    build(); startAll()
                 }
             }
             .show()
@@ -309,23 +339,21 @@ class GridActivity : Activity() {
             val updated = rec.copy(channels = chans)
             Store(this).recorder = updated
             recorder = updated
-            build(updated)
+            build()
             startAll()
             checkSignal(updated)
         }
     }
 
     private fun startAll() {
-        val rec = recorder ?: return
         // Light "sub-stream" in the grid keeps several cameras smooth, even on TV boxes.
-        tiles.forEach { it.startLive(rec, sub = true) }
+        tiles.forEach { it.startLive(sub = true) }
     }
 
     /** Turning the phone sideways or upright rebuilds the layout to suit. */
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
-        val rec = recorder ?: return
-        build(rec)
+        build()
         startAll()
     }
 

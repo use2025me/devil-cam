@@ -49,6 +49,8 @@
         <activity android:name=".PlaybackActivity" android:exported="false"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden" />
         <activity android:name=".SafetyActivity" android:exported="false" />
+        <activity android:name=".AddDeviceActivity" android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
 
         <service
             android:name=".AlertService"

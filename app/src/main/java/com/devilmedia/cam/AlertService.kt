@@ -45,7 +45,12 @@ class AlertService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (!running) {
             running = true
-            thread(isDaemon = true, name = "devil-cam-alerts") { loop() }
+            val store = Store(this)
+            // One listener for the recorder, and one for each Hikvision doorbell or camera.
+            if (store.recorder != null) thread(isDaemon = true, name = "alerts-rec") { loop(null) }
+            store.devices.filter { it.canAlert }.forEach { d ->
+                thread(isDaemon = true, name = "alerts-${d.id}") { loop(d.id) }
+            }
         }
         return START_STICKY
     }
@@ -55,16 +60,20 @@ class AlertService : Service() {
         super.onDestroy()
     }
 
-    private fun loop() {
+    /** Listens to the recorder (deviceId null) or to one added doorbell/camera. */
+    private fun loop(deviceId: String?) {
         var wait = 5_000L
         while (running) {
-            val rec = Store(this).recorder
-            if (rec == null || !Store(this).motionAlerts) {
+            val store = Store(this)
+            if (!store.motionAlerts || !store.hasAnything) {
                 stopSelf()
                 return
             }
+            val rec = store.recorder
+            val dev = deviceId?.let { id -> store.devices.firstOrNull { it.id == id } }
+            if ((deviceId == null && rec == null) || (deviceId != null && dev == null)) return
             try {
-                val api = Isapi(rec.baseHttp(), rec.user, rec.password)
+                val api = dev?.isapi() ?: Isapi(rec!!.baseHttp(), rec.user, rec.password)
                 val c = api.openStream("/ISAPI/Event/notification/alertStream")
                 wait = 5_000L
                 c.inputStream.bufferedReader(Charsets.UTF_8).use { reader ->
@@ -73,7 +82,7 @@ class AlertService : Service() {
                         val line = reader.readLine() ?: break
                         sb.append(line).append('\n')
                         if (line.contains("</EventNotificationAlert>")) {
-                            handle(rec, api, sb.toString())
+                            handle(store, dev, api, sb.toString())
                             sb.setLength(0)
                         }
                         if (sb.length > 200_000) sb.setLength(0)
@@ -89,34 +98,40 @@ class AlertService : Service() {
         }
     }
 
-    private fun handle(rec: Recorder, api: Isapi, xml: String) {
+    private fun handle(store: Store, dev: Device?, api: Isapi, xml: String) {
         val type = Isapi.tag(xml, "eventType")?.lowercase() ?: return
         val state = Isapi.tag(xml, "eventState")?.lowercase() ?: "active"
         if (state != "active") return
+        // A doorbell press: Hikvision doorbells report these as call/doorbell/intercom events.
+        val ring = dev != null && listOf("door", "call", "ring", "intercom").any { type.contains(it) }
         // Movement, people/vehicle detection and line/area alarms all count as "motion".
         val motion = type in setOf("vmd", "linedetection", "fielddetection", "regionentrance", "regionexiting", "pir")
-        if (!motion) return
-        val ch = (Isapi.tag(xml, "channelID") ?: Isapi.tag(xml, "dynChannelID"))?.toIntOrNull() ?: return
+        if (!ring && !motion) return
+        val ch = if (dev != null) 1 else
+            (Isapi.tag(xml, "channelID") ?: Isapi.tag(xml, "dynChannelID"))?.toIntOrNull() ?: return
+        val source: CamSource = dev ?: store.recorder?.let { r ->
+            r.channels.firstOrNull { it.number == ch }?.let { RecorderCam(r, it) }
+        } ?: return
+        val id = source.key.hashCode()
         val now = System.currentTimeMillis()
-        // At most one alert per camera per minute.
-        if (now - (lastAlert[ch] ?: 0L) < 60_000L) return
-        lastAlert[ch] = now
-        val index = rec.channels.indexOfFirst { it.number == ch }
-        val name = rec.channels.getOrNull(index)?.name ?: "Camera $ch"
+        // Doorbell presses always alert; motion at most once a minute per camera.
+        if (!ring && now - (lastAlert[id] ?: 0L) < 60_000L) return
+        lastAlert[id] = now
         val photo = api.snapshot(ch)?.let { BitmapFactory.decodeByteArray(it, 0, it.size) }
         val time = SimpleDateFormat("HH:mm:ss", Locale.UK).format(Date())
+        val title = if (ring) "🔔 Someone's at the ${source.name.lowercase()}" else "Motion on ${source.name}"
         val b = Notification.Builder(this, ALERTS)
             .setSmallIcon(R.drawable.ic_videocam)
-            .setContentTitle("Motion on $name")
-            .setContentText("Seen at $time. Tap to watch live.")
+            .setContentTitle(title)
+            .setContentText("$time · Tap to watch live.")
             .setAutoCancel(true)
-            .setCategory(Notification.CATEGORY_EVENT)
-            .setContentIntent(openApp(this, index.takeIf { it >= 0 }))
+            .setCategory(if (ring) Notification.CATEGORY_CALL else Notification.CATEGORY_EVENT)
+            .setContentIntent(openApp(this, source.key))
         if (photo != null) {
             b.setLargeIcon(photo)
-            b.setStyle(Notification.BigPictureStyle().bigPicture(photo).setSummaryText("Seen at $time"))
+            b.setStyle(Notification.BigPictureStyle().bigPicture(photo).setSummaryText(time))
         }
-        getSystemService(NotificationManager::class.java).notify(1000 + ch, b.build())
+        getSystemService(NotificationManager::class.java).notify(id, b.build())
     }
 
     companion object {
@@ -137,13 +152,13 @@ class AlertService : Service() {
             )
         }
 
-        private fun openApp(context: Context, cameraIndex: Int?): PendingIntent {
-            val i = if (cameraIndex != null)
-                Intent(context, CameraActivity::class.java).putExtra("index", cameraIndex)
+        private fun openApp(context: Context, key: String?): PendingIntent {
+            val i = if (key != null)
+                Intent(context, CameraActivity::class.java).putExtra("key", key)
             else Intent(context, GridActivity::class.java)
             i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP)
             return PendingIntent.getActivity(
-                context, cameraIndex ?: -1, i,
+                context, key?.hashCode() ?: -1, i,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
         }
