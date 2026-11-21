@@ -244,6 +244,7 @@ class GridActivity : Activity() {
             "Refresh camera list",
             if (rec != null) "Change recorder or login" else "Add a recorder",
             "Check for app updates",
+            "Alexa & Echo Show",
             "About Devil Cam"
         )
         AlertDialog.Builder(this, R.style.Theme_DevilCam_Dialog)
@@ -266,6 +267,14 @@ class GridActivity : Activity() {
                     }
                     7 -> UpdateChecker(this).check(manual = true)
                     8 -> AlertDialog.Builder(this, R.style.Theme_DevilCam_Dialog)
+                        .setTitle("Alexa & Echo Show")
+                        .setMessage("Say \"Alexa, show Camera 1\" to see your cameras on an Echo Show or Fire TV.\n\nThis needs the Devil Cam Hub, a small Raspberry Pi left on at home, plus the Devil Cam Alexa skill. The step-by-step guide is on GitHub.")
+                        .setPositiveButton("Open the guide") { _, _ ->
+                            startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse("https://github.com/use2025me/devil-cam/blob/main/ALEXA-SETUP.md")))
+                        }
+                        .setNegativeButton("Close", null)
+                        .show()
+                    9 -> AlertDialog.Builder(this, R.style.Theme_DevilCam_Dialog)
                         .setTitle("Devil Cam")
                         .setMessage("Version ${packageManager.getPackageInfo(packageName, 0).versionName}\n\nA Devil Media Group app.\nWatches your cameras over your home Wi-Fi, with no ports opened on your router.")
                         .setPositiveButton("OK", null)

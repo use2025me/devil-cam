@@ -5,6 +5,8 @@ on:
     branches: [main]
     paths-ignore:
       - "**.md"
+      - "hub/**"
+      - "alexa/**"
   workflow_dispatch:
 
 permissions:
