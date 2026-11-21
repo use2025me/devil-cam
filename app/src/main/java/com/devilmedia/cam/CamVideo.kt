@@ -19,6 +19,8 @@ object Vlc {
 /** A video picture that plays a recorder stream (live or recorded). */
 /** [texture] lets the picture have rounded corners (used in the grid). */
 class CamVideo(context: Context, private val texture: Boolean = false) : FrameLayout(context) {
+    /** Fill the space (trimming edges) instead of showing black bars. */
+    var fill = false
     private val layout = VLCVideoLayout(context)
     private var mp: MediaPlayer? = null
     private var sawPicture = false
@@ -50,7 +52,7 @@ class CamVideo(context: Context, private val texture: Boolean = false) : FrameLa
         val lib = Vlc.get(context)
         val player = MediaPlayer(lib)
         player.attachViews(layout, null, false, texture)
-        player.videoScale = MediaPlayer.ScaleType.SURFACE_BEST_FIT
+        player.videoScale = if (fill) MediaPlayer.ScaleType.SURFACE_FIT_SCREEN else MediaPlayer.ScaleType.SURFACE_BEST_FIT
         val media = Media(lib, Uri.parse(url)).apply {
             setHWDecoderEnabled(true, false)
             addOption(":rtsp-tcp")

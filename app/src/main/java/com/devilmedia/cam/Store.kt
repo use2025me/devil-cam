@@ -58,7 +58,8 @@ class Store(context: Context) {
         }
         set(r) {
             if (r == null) {
-                prefs.edit().clear().apply()
+                prefs.edit().remove("host").remove("httpPort").remove("rtspPort").remove("user")
+                    .remove("pw").remove("model").remove("channels").putBoolean("motionAlerts", false).apply()
                 return
             }
             prefs.edit()
@@ -71,6 +72,21 @@ class Store(context: Context) {
                 .putString("channels", r.channels.joinToString("\n") { "${it.number}|${it.name.replace("\n", " ")}" })
                 .apply()
         }
+
+    /** Hide cameras the recorder gets no picture from. */
+    var hideNoSignal: Boolean
+        get() = prefs.getBoolean("hideNoSignal", true)
+        set(v) = prefs.edit().putBoolean("hideNoSignal", v).apply()
+
+    /** Fill the camera cards (trims a little off the edges) instead of showing black bars. */
+    var fillCards: Boolean
+        get() = prefs.getBoolean("fillCards", true)
+        set(v) = prefs.edit().putBoolean("fillCards", v).apply()
+
+    /** Notify when a camera sees movement. */
+    var motionAlerts: Boolean
+        get() = prefs.getBoolean("motionAlerts", false)
+        set(v) = prefs.edit().putBoolean("motionAlerts", v).apply()
 
     private fun key(): SecretKey {
         val ks = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }

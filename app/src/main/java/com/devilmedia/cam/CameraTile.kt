@@ -20,12 +20,12 @@ import kotlin.concurrent.thread
  * A camera tile: the picture, the camera's name and a LIVE badge. Selectable with a TV remote.
  * [card] gives it rounded corners and a 16:9 shape (the grid on an upright phone).
  */
-class CameraTile(context: Context, val channel: Channel, private val card: Boolean = false) : FrameLayout(context) {
-    val video = CamVideo(context, texture = card)
+class CameraTile(context: Context, val channel: Channel, private val card: Boolean = false, fill: Boolean = false) : FrameLayout(context) {
+    val video = CamVideo(context, texture = card).also { it.fill = fill }
 
     /** Still photos from the recorder, shown until live video starts (or if it can't). */
     private val photo = ImageView(context).apply {
-        scaleType = ImageView.ScaleType.FIT_CENTER
+        scaleType = if (fill) ImageView.ScaleType.CENTER_CROP else ImageView.ScaleType.FIT_CENTER
         visibility = View.GONE
     }
     private val status = TextView(context).apply {

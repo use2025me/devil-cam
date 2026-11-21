@@ -52,6 +52,34 @@ class Isapi(private val base: String, private val user: String, private val pass
         }
     }
 
+    /**
+     * Opens a long-running connection (used for the recorder's live event feed).
+     * Handles the login, then returns the open connection for reading.
+     */
+    fun openStream(path: String): HttpURLConnection {
+        fun open(auth: String?): HttpURLConnection = (URL(base + path).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 5000
+            readTimeout = 0
+            if (auth != null) setRequestProperty("Authorization", auth)
+        }
+        val first = open(null)
+        if (first.responseCode != 401) return first
+        val challenge = first.headerFields.entries
+            .filter { it.key.equals("WWW-Authenticate", ignoreCase = true) }
+            .flatMap { it.value }
+        first.disconnect()
+        val digest = challenge.firstOrNull { it.trim().startsWith("Digest", ignoreCase = true) }
+        val header = if (digest != null) digestHeader(digest, path)
+        else "Basic " + android.util.Base64.encodeToString("$user:$password".toByteArray(), android.util.Base64.NO_WRAP)
+        val c = open(header)
+        if (c.responseCode !in 200..299) {
+            val code = c.responseCode
+            c.disconnect()
+            throw IOException("event feed refused (code $code)")
+        }
+        return c
+    }
+
     private fun digestHeader(challenge: String, uri: String): String {
         val params = Regex("""(\w+)=(?:"([^"]*)"|([^,\s]+))""").findAll(challenge.substringAfter(' '))
             .associate { m -> m.groupValues[1].lowercase() to (m.groupValues[2].ifEmpty { m.groupValues[3] }) }
@@ -131,6 +159,22 @@ class Isapi(private val base: String, private val user: String, private val pass
         } catch (_: Exception) {
         }
         return found.map { Channel(it.key, it.value) }
+    }
+
+    /**
+     * Cameras the recorder currently gets no picture from ("NO VIDEO").
+     * Empty if it won't say.
+     */
+    fun noSignalChannels(): Set<Int> = try {
+        val r = get("/ISAPI/System/Video/inputs/channels")
+        if (!r.ok) emptySet() else
+            Regex("""<VideoInputChannel\b.*?</VideoInputChannel>""", RegexOption.DOT_MATCHES_ALL)
+                .findAll(r.text)
+                .filter { tag(it.value, "resDesc")?.contains("NO VIDEO", ignoreCase = true) == true }
+                .mapNotNull { tag(it.value, "id")?.toIntOrNull() }
+                .toSet()
+    } catch (_: Exception) {
+        emptySet()
     }
 
     /** True / false if the recorder says whether UPnP is on, or null if it won't say. */

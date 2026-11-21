@@ -18,6 +18,15 @@ class GridActivity : Activity() {
 
     private val tiles = mutableListOf<CameraTile>()
     private var recorder: Recorder? = null
+    /** Cameras the recorder gets no picture from. */
+    private var noSignal: Set<Int> = emptySet()
+
+    /** The cameras to show: all of them, minus ones with no signal if that setting is on. */
+    private fun shown(rec: Recorder): List<Channel> {
+        if (!Store(this).hideNoSignal) return rec.channels
+        val live = rec.channels.filter { it.number !in noSignal }
+        return live.ifEmpty { rec.channels }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -31,7 +40,19 @@ class GridActivity : Activity() {
         recorder = rec
         build(rec)
         checkVideoPort(rec)
+        checkSignal(rec)
+        if (Store(this).motionAlerts) AlertService.start(this)
         UpdateChecker(this).check(manual = false)
+    }
+
+    private fun checkSignal(rec: Recorder) {
+        background({ Isapi(rec.baseHttp(), rec.user, rec.password).noSignalChannels() }) { dead ->
+            if (dead != noSignal) {
+                noSignal = dead
+                build(recorder ?: rec)
+                startAll()
+            }
+        }
     }
 
     /** Older setups assumed port 554; ask the recorder which video port it really uses. */
@@ -65,7 +86,8 @@ class GridActivity : Activity() {
         }
         if (!side) root.addView(header(rec))
 
-        val cams = rec.channels
+        val cams = shown(rec)
+        val fill = Store(this).fillCards
         val cols = when {
             cams.size <= 1 -> 1
             cards || cams.size <= 4 -> 2
@@ -86,9 +108,10 @@ class GridActivity : Activity() {
                 val lp = LinearLayout.LayoutParams(0, if (cards) ViewGroup.LayoutParams.WRAP_CONTENT else ViewGroup.LayoutParams.MATCH_PARENT, 1f)
                 lp.setMargins(gap, gap, gap, gap)
                 if (i < cams.size) {
-                    val tile = CameraTile(this, cams[i], card = cards)
+                    val tile = CameraTile(this, cams[i], card = cards, fill = fill && cards)
+                    val full = rec.channels.indexOf(cams[i])
                     tile.setOnClickListener {
-                        startActivity(Intent(this, CameraActivity::class.java).putExtra("index", i))
+                        startActivity(Intent(this, CameraActivity::class.java).putExtra("index", full))
                     }
                     tiles += tile
                     row.addView(tile, lp)
@@ -133,8 +156,10 @@ class GridActivity : Activity() {
             typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.BOLD)
         })
         titles.addView(TextView(this).apply {
-            val n = rec.channels.size
-            text = "${rec.model.ifBlank { "Recorder" }} · $n camera${if (n == 1) "" else "s"}"
+            val n = shown(rec).size
+            val hidden = rec.channels.size - n
+            text = "${rec.model.ifBlank { "Recorder" }} · $n camera${if (n == 1) "" else "s"}" +
+                if (hidden > 0) " · $hidden with no signal hidden" else ""
             setTextColor(Brand.MUTED)
             textSize = 12f
             maxLines = 1
@@ -205,19 +230,33 @@ class GridActivity : Activity() {
 
     private fun settings() {
         val rec = recorder ?: return
-        val options = arrayOf("Refresh camera list", "Change recorder or login", "Check for app updates", "About Devil Cam")
+        val store = Store(this)
+        fun onOff(b: Boolean) = if (b) "On" else "Off"
+        val options = arrayOf(
+            "Motion alerts: ${onOff(store.motionAlerts)}",
+            "Hide cameras with no signal: ${onOff(store.hideNoSignal)}",
+            "Fill the camera cards: ${onOff(store.fillCards)}",
+            "Refresh camera list",
+            "Change recorder or login",
+            "Check for app updates",
+            "About Devil Cam"
+        )
         AlertDialog.Builder(this, R.style.Theme_DevilCam_Dialog)
             .setTitle("${rec.model} · ${rec.host}")
             .setItems(options) { _, which ->
                 when (which) {
-                    0 -> refresh(rec)
-                    1 -> {
-                        Store(this).recorder = null
+                    0 -> toggleAlerts()
+                    1 -> { store.hideNoSignal = !store.hideNoSignal; build(rec); startAll() }
+                    2 -> { store.fillCards = !store.fillCards; build(rec); startAll() }
+                    3 -> refresh(rec)
+                    4 -> {
+                        AlertService.stop(this)
+                        store.recorder = null
                         startActivity(Intent(this, SetupActivity::class.java))
                         finish()
                     }
-                    2 -> UpdateChecker(this).check(manual = true)
-                    3 -> AlertDialog.Builder(this, R.style.Theme_DevilCam_Dialog)
+                    5 -> UpdateChecker(this).check(manual = true)
+                    6 -> AlertDialog.Builder(this, R.style.Theme_DevilCam_Dialog)
                         .setTitle("Devil Cam")
                         .setMessage("Version ${packageManager.getPackageInfo(packageName, 0).versionName}\n\nA Devil Media Group app.\nWatches your cameras over your home Wi-Fi, with no ports opened on your router.")
                         .setPositiveButton("OK", null)
@@ -225,6 +264,37 @@ class GridActivity : Activity() {
                 }
             }
             .show()
+    }
+
+    private fun toggleAlerts() {
+        val store = Store(this)
+        if (store.motionAlerts) {
+            store.motionAlerts = false
+            AlertService.stop(this)
+            android.widget.Toast.makeText(this, "Motion alerts off", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (android.os.Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 7)
+            return
+        }
+        store.motionAlerts = true
+        AlertService.start(this)
+        AlertDialog.Builder(this, R.style.Theme_DevilCam_Dialog)
+            .setTitle("Motion alerts on")
+            .setMessage("You'll get an alert with a photo when a camera sees movement, while this device is on your home Wi-Fi.\n\nMotion detection must be switched on in the recorder: on the TV go to Configuration → Event → Motion, tick each camera, and under Linkage Action tick \"Notify Surveillance Center\".")
+            .setPositiveButton("OK", null)
+            .show()
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == 7) {
+            if (grantResults.firstOrNull() == android.content.pm.PackageManager.PERMISSION_GRANTED) toggleAlerts()
+            else android.widget.Toast.makeText(this, "Devil Cam needs permission to show alerts.", android.widget.Toast.LENGTH_LONG).show()
+        }
     }
 
     private fun refresh(rec: Recorder) {
@@ -241,6 +311,7 @@ class GridActivity : Activity() {
             recorder = updated
             build(updated)
             startAll()
+            checkSignal(updated)
         }
     }
 
